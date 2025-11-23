@@ -6,7 +6,7 @@
 
 int main() {
     zmq::context_t context{1};
-    zmq::socket_t socket{context, zmq::socket_type:req};
+    zmq::socket_t socket{context, zmq::socket_type::req};
 
     socket.connect("tcp://localhost:5555");
     std::cout<<"Connecting to hello world server..."<<std::endl;
