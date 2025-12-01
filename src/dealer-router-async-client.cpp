@@ -26,11 +26,9 @@ int main(int argc, char** argv) {
         zmq::message_t msg(text.size());
         memcpy(msg.data(), text.data(), text.size());
 
-        // DEALER는 payload만 보냄 (routing id는 소켓 옵션으로 붙는다)
         dealer.send(msg, zmq::send_flags::none);
         std::cout << "[DEALER " << my_id << "] sent \"" << text << "\"\n";
 
-        // 응답 수신
         zmq::message_t reply;
         dealer.recv(reply, zmq::recv_flags::none);
         std::string r(static_cast<char*>(reply.data()), reply.size());
