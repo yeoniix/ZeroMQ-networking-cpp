@@ -5,23 +5,27 @@
 #include <chrono>
 
 int main() {
+    //initialize the zmq context with a single IO thread
     zmq::context_t context{1};
+    //REQ socket
     zmq::socket_t socket{context, zmq::socket_type::req};
-
     socket.connect("tcp://localhost:5555");
     std::cout<<"Connecting to hello world server..."<<std::endl;
 
     std::string message_text = "Hello";
-    zmq::message_t message(message_text.begin(), message_text.end());
-    std::cout<<"Client: sending '"<< message_text<<"'"<<std::endl;
-    socket.send(message, zmq::send_flags::none);
 
-    zmq::message_t reply;
-    socket.recv(reply, zmq::recv_flags::none);
-    std::string reply_text(static_cast<char*>(reply.data()), reply.size());
-    std::cout<<"Received reply '"<< reply_text<<"'"<<std::endl;
+    for(int request_num=0; request_num<10; ++request_num) {
+        zmq::message_t message(message_text);
+        std::cout<<"Sending request "<< request_num <<"'..."<<std::endl;
+        socket.send(message, zmq::send_flags::none);
 
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+        zmq::message_t reply;
+        socket.recv(reply, zmq::recv_flags::none);
+
+        std::cout<<"Received reply '"<< reply.to_string()<<std::endl;
+        std::cout<<"("<<request_num<<")"<<std::endl;
+
+    }
 
     return 0;
 
