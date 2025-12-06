@@ -16,7 +16,7 @@ int main(){
         collector.recv(message);
 
         std::string s(static_cast<char*>(message.data()), message.size());
-        std::cout<<"I: publishing update"<<s<<std::endl;
+        std::cout<<"server: publishing update => "<<s<<std::endl;
         publisher.send(message, zmq::send_flags::none);
 
     }

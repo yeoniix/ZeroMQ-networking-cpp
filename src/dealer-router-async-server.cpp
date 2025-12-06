@@ -1,41 +1,77 @@
 #include <zmq.hpp>
+#include <thread>
+#include <vector>
 #include <string>
 #include <iostream>
 
-int main() {
-    // 1) ZMQ 컨텍스트
-    zmq::context_t ctx{1};
 
-    // 2) ROUTER 소켓
-    zmq::socket_t router{ctx, zmq::socket_type::router};
-    router.bind("tcp://*:5560");
-    std::cout << "ROUTER listening on tcp://*:5560\n";
+class ServerWorker {
+public:
+    ServerWorker(zmq::context_t& ctx, int id) : ctx_(ctx), id_(id) {}
 
-    while (true) {
-        // ROUTER는 항상 "보낸쪽 식별자(routing id) → payload" 순서로 프레임들을 받는다.
-        // (DEALER는 기본적으로 빈 프레임을 안 보낸다)
-        zmq::message_t from;     // routing id (클라이언트 식별자)
-        zmq::message_t payload;  // 실제 메시지
+    void operator()() {
+        zmq::socket_t worker(ctx_, zmq::socket_type::dealer);
+        worker.connect("inproc://backend");
 
-        // 1프레임: routing id
-        router.recv(from, zmq::recv_flags::none);
+        std::cout << "Worker#" << id_ << " started" << std::endl;
 
-        // 다음 프레임이 곧 payload라고 가정 (단순 예제)
-        router.recv(payload, zmq::recv_flags::none);
+        while (true) {
+            zmq::message_t ident, msg;
 
-        std::string from_id(static_cast<char*>(from.data()), from.size());
-        std::string data(static_cast<char*>(payload.data()), payload.size());
+            if (!worker.recv(ident, zmq::recv_flags::none)) continue;
+            worker.recv(msg, zmq::recv_flags::none);
 
-        std::cout << "[ROUTER] from=" << from_id << " msg=\"" << data << "\"\n";
+            std::string ident_str(static_cast<char*>(ident.data()), ident.size());
+            std::string msg_str(static_cast<char*>(msg.data()), msg.size());
 
-        // 응답 만들기
-        std::string reply_text = "OK:" + data;
-        zmq::message_t reply(reply_text.size());
-        memcpy(reply.data(), reply_text.data(), reply_text.size());
-
-        // ROUTER가 특정 클라이언트에게 답하려면 "routing id 프레임 → 데이터 프레임"으로 보내야 함
-        router.send(from, zmq::send_flags::sndmore);   // 그대로 재사용 가능 (move 아님)
-        router.send(reply, zmq::send_flags::none);
+            std::cout << "Worker#" << id_<< " received " << msg_str<< " from " << ident_str<< std::endl; 
+            worker.send(ident, zmq::send_flags::sndmore);
+            worker.send(msg, zmq::send_flags::none);
+        }
     }
+
+private:
+    zmq::context_t& ctx_;
+    int id_;
+};
+
+
+class ServerTask {
+public:
+    ServerTask(int num_workers)
+        : ctx_(1),
+          num_workers_(num_workers),
+          frontend_(ctx_, zmq::socket_type::router),
+          backend_(ctx_, zmq::socket_type::dealer)
+    {}
+
+    void run() {
+        frontend_.bind("tcp://*:5570");
+        backend_.bind("inproc://backend");
+
+     
+        workers_.reserve(num_workers_);
+        for (int i = 0; i < num_workers_; ++i)
+            workers_.emplace_back(ServerWorker(ctx_, i));
+
+        
+        zmq::proxy(frontend_, backend_);
+
+        for (auto& th : workers_) th.join();
+    }
+
+private:
+    zmq::context_t ctx_;
+    int num_workers_;
+    zmq::socket_t frontend_;
+    zmq::socket_t backend_;
+    std::vector<std::thread> workers_;
+};
+
+
+int main(int argc, char* argv[]) {
+    int n = std::stoi(argv[1]);
+    ServerTask server(n);
+    server.run();
     return 0;
 }

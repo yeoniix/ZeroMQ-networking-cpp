@@ -1,42 +1,42 @@
 #include <zmq.hpp>
-#include <string>
 #include <iostream>
+#include <string>
 #include <thread>
 #include <chrono>
 
-int main(int argc, char** argv) {
-    // 실행 시 ID를 넘길 수 있게 (기본값 "client-1")
-    std::string my_id = (argc > 1) ? argv[1] : "client-1";
-
+int main(int argc, char* argv[]) {
+    std::string identity = argv[1];
     zmq::context_t ctx{1};
+    zmq::socket_t socket(ctx, zmq::socket_type::dealer);
 
-    // DEALER 소켓
-    zmq::socket_t dealer{ctx, zmq::socket_type::dealer};
 
-    // 내 routing id(식별자) 설정 — ROUTER가 첫 프레임으로 이 값을 받게 된다
-    dealer.set(zmq::sockopt::routing_id, my_id);
+    socket.setsockopt(ZMQ_IDENTITY, identity.data(), static_cast<int>(identity.size()));
+    socket.connect("tcp://localhost:5570");
+    std::cout << "Client " << identity << " started" << std::endl;
+    int reqs = 0;
 
-    dealer.connect("tcp://127.0.0.1:5560");
-    std::cout << "[DEALER " << my_id << "] connected to tcp://127.0.0.1:5560\n";
+    while (true) {
+        reqs=reqs+1;
+        std::cout << "Req #" << reqs << " sent.." << std::endl;
+        std::string out = "request #" + std::to_string(reqs);
+        socket.send(zmq::buffer(out), zmq::send_flags::none);
 
-    // 간단히 5번 요청/응답
-    for (int i = 0; i < 5; ++i) {
-        std::string text = "hello-" + std::to_string(i);
 
-        zmq::message_t msg(text.size());
-        memcpy(msg.data(), text.data(), text.size());
+        std::this_thread::sleep_for(std::chrono::seconds(1));
 
-        dealer.send(msg, zmq::send_flags::none);
-        std::cout << "[DEALER " << my_id << "] sent \"" << text << "\"\n";
+        zmq::pollitem_t items[] = { { static_cast<void*>(socket), 0, ZMQ_POLLIN, 0 } };
+        zmq::poll(items, 1, 1000);
 
-        zmq::message_t reply;
-        dealer.recv(reply, zmq::recv_flags::none);
-        std::string r(static_cast<char*>(reply.data()), reply.size());
-        std::cout << "[DEALER " << my_id << "] got reply \"" << r << "\"\n";
+        if (items[0].revents & ZMQ_POLLIN) {
+            zmq::message_t msg;
+            socket.recv(msg, zmq::recv_flags::none);
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(400));
+            std::string msg_str(static_cast<char*>(msg.data()), msg.size());
+
+
+            std::cout << identity << " received: " << msg_str << std::endl;
+        }
     }
 
-    std::cout << "[DEALER " << my_id << "] done.\n";
     return 0;
 }
